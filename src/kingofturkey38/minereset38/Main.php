@@ -5,92 +5,63 @@ declare(strict_types=1);
 namespace kingofturkey38\minereset38;
 
 use pocketmine\plugin\PluginBase;
-
+use pocketmine\event\Listener;
+use pocketmine\event\player\PlayerChatEvent;
 use SOFe\AwaitStd\AwaitStd;
-
 use CortexPE\Commando\PacketHooker;
-
 use kingofturkey38\minereset38\commands\MineCommand;
 use kingofturkey38\minereset38\mine\MineRegistry;
+use kingofturkey38\minereset38\mine\Mine;
 
-class Main extends PluginBase{
+class Main extends PluginBase implements Listener {
+    
+    private static self $instance;
+    private AwaitStd $std;
+    public static $blockReplaceTick;
+    private const CONFIG_VERSION = "0.0.2";
 
-	/** @var self $instance */
-	private static self $instance;
+    protected function onLoad(): void {
+        self::$instance = $this;
+        $this->std = AwaitStd::init($this);
+        MineRegistry::getInstance();
+        $this->loadFiles();
+    }
 
-	/** @var AwaitStd $std */
-	private AwaitStd $std;
+    protected function onEnable(): void {
+        $this->getServer()->getPluginManager()->registerEvents($this, $this);
 
-	public static $blockReplaceTick;
-	# Check new version of config
-	private const CONFIG_VERSION = "0.0.2";
-
-	/**
-	 * @return void
-	 */
-	protected function onLoad(): void{
-		self::$instance = $this;
-		$this->std = AwaitStd::init($this);
-		MineRegistry::getInstance();
-		$this->loadFiles();
-	}
-
-	/**
-	 * @return void
-	 */
-	protected function onEnable(): void{
-		$this->loadCheck();
-		if(!PacketHooker::isRegistered()){
-			PacketHooker::register($this);
-		}
-		$this->getServer()->getCommandMap()->register("minereset38", new MineCommand);
-	}
-
-	/**
-	 * @return void
-	 */
-	protected function onDisable(): void{
-		MineRegistry::getInstance()->onClose($this);
-	}
-
-	/**
-	 * @return void
-	 */
-	private function loadFiles(): void{
-		$this->saveResource("config.yml");
-		self::$blockReplaceTick = $this->getConfig()->get("blockReplaceTick", 1000);
-	}
-
-	/**
-	 * @return void
-	 */
-	private function loadCheck(): void{
-		if((!$this->getConfig()->exists("config-version")) || ($this->getConfig()->get("config-version") != self::CONFIG_VERSION)){
-            rename($this->getDataFolder() . "config.yml", $this->getDataFolder() . "config_old.yml");
-            $this->saveResource("config.yml");
-            $this->getLogger()->critical("Your configuration file is outdated.");
-            $this->getLogger()->notice("Your old configuration has been saved as config_old.yml and a new configuration file has been generated. Please update accordingly.");
+        $this->loadCheck();
+        if (!PacketHooker::isRegistered()) {
+            PacketHooker::register($this);
         }
-	}
+        $this->getServer()->getCommandMap()->register("minereset38", new MineCommand);
+    }
 
-	/**
-	 * @return Main
-	 */
-	public static function getInstance(): Main{
-		return self::$instance;
-	}
+    public function onChat(PlayerChatEvent $event): void {
+        $message = $event->getMessage();
+        if (str_contains($message, "{minereset38.time.")) {
+            $message = $this->replacePlaceholder($message);
+            $event->setMessage($message);
+        }
+    }
 
-	/**
-	 * @return AwaitStd
-	 */
-	public function getStd(): AwaitStd{
-		return $this->std;
-	}
+    private function replacePlaceholder(string $message): string {
+        preg_match_all("/{minereset38.time.(\w+)}/", $message, $matches);
+        foreach ($matches[1] as $mineName) {
+            $mine = MineRegistry::getInstance()->getMine($mineName);
+            if ($mine instanceof Mine) {
+                $replacement = $mine->getTimeLeft() . "s [" . $mine->getProgressBar() . "]";
+                $message = str_replace("{minereset38.time.$mineName}", $replacement, $message);
+            }
+        }
+        return $message;
+    }
 
-	/**
-	 * @return string
-	 */
-	public static function getPrefix(): string{
-		return self::$instance->getConfig()->get("prefix");
-	}
+    public static function getInstance(): Main {
+        return self::$instance;
+    }
+
+    public function getStd(): AwaitStd {
+        return $this->std;
+    }
 }
